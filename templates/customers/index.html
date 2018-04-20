@@ -22,8 +22,7 @@
                 {% for customer in customers %}
                 <tr>
                     <td>{{customer.firstName}}</td>
-                    <td>
-                        <a href="/customer/report/{{customer._id}}">{{customer.lastName}}</a></td>
+                    <td>{{customer.lastName}}</td>
                     <td>{{customer.street}}</td>
                     <td>{{customer.city}}</td>
                     <td>{{customer.state}}</td>

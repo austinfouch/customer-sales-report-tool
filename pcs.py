@@ -45,11 +45,6 @@ def customer_delete(id):
     else:
         delete_customer(id)
         return redirect("/customer/", code=302)    
-
-@app.route('/customer/report/<id>', methods=['GET'])
-def get_customer_report(id):
-    customer = customer_report(id)
-    return render_template('customers/report.html', customer=customer)
 #########################################################################
 
 
