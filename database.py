@@ -1,4 +1,5 @@
 import configparser
+import redis
 import pymongo
 from pymongo import MongoClient
 from bson.objectid import ObjectId
@@ -6,44 +7,30 @@ from bson.objectid import ObjectId
 customers = None
 products = None
 orders = None
+redisCache = None
 
-customer_keys = ('firstName', 'lastName', 'street', 'city', 'state', 'zip')
-product_keys = ('name', 'price')
-order_keys = ('customer', 'product')
-
-# utility function you might find useful.. accepts a key list (see above) and 
-# a document returned by pymongo (dictionary) and turns it into a list.     
-def to_list(keys, document):
-    record = []
-    for key in keys:
-        record.append(document[key])
-    return record  
-
-# utility function you might find useful...  Similar to to_list above, but it's appending
-# to a list (record) instead of creating a new one.  Useful for when you already have a
-# list, but need to join another dictionary object into it...
-def join(keys, document, record):
-    for key in keys:
-        record.append(document[key])
-    return record
-
-# The following functions are REQUIRED - you should REPLACE their implementation
-# with the appropriate code to interact with your Mongo database.
 def initialize():
     global customers
     global products
     global orders
+    global redisCache
 
     config = configparser.ConfigParser()
     config.read('config.ini')
-    connection_string = config['database']['mongo_connection']
-    conn = MongoClient(connection_string)
-    
-    customers = conn.db_project2.customers
-    products = conn.db_project2.products
-    orders = conn.db_project2.orders
+
+    mongoConnStr = config['database']['mongo_connection']
+    mongoConn = MongoClient(mongoConnStr)
+    customers = mongoConn.db_project2.customers
+    products = mongoConn.db_project2.products
+    orders = mongoConn.db_project2.orders
 
     # You might also want to connect to redis...
+    redisCache = redis.StrictRedis(host=config['database']['redis_host'],
+                                port=config['database']['redis_port'],
+                                password=config['database']['redis_pw'],
+                                db=0,
+                                decode_responses=True)
+    redisCache.flushdb()
 
 def get_customers():
     allCustomers = customers.find({})
@@ -57,7 +44,10 @@ def upsert_customer(customer):
     customers.insert_one(customer)
 
 def delete_customer(id):
-    orders.delete_many({'customerId' : id})
+    for order in get_orders():
+        if order['customerId'] == id:
+            orders.delete_one({'customerId' : id})
+            redisCache.delete(ObjectId(order['productId']))
     customers.delete_one({'_id' : ObjectId(id)})
     
 def get_products():
@@ -73,6 +63,7 @@ def upsert_product(product):
 
 def delete_product(id):
     orders.delete_many({'productId' :  id})
+    redisCache.delete(ObjectId(id))
     products.delete_one({'_id' :  ObjectId(id)})
 
 def get_orders():
@@ -86,19 +77,26 @@ def get_order(id):
 def upsert_order(order):
     order['customer'] = get_customer(order['customerId'])
     order['product'] = get_product(order['productId'])
+    redisCache.delete(ObjectId(order['productId']))
     orders.insert_one(order)
 
 def delete_order(id):
-    orders.delete_one({'_id' :  ObjectId(id)})
+    order = get_order(id)
+    orders.delete_one({'_id' :  order['_id']})
+    redisCache.delete(ObjectId(order['productId']))
 
-# Pay close attention to what is being returned here.  Each product in the products
-# list is a dictionary, that has all product attributes + last_order_date, total_sales, and 
-# gross_revenue.  This is the function that needs to be use Redis as a cache.
-
-# - When a product dictionary is computed, save it as a hash in Redis with the product's
-#   ID as the key.  When preparing a product dictionary, before doing the computation, 
-#   check if its already in redis!
 def sales_report():
-    return list()
-
-initialize()
+    sales = []
+    for product in get_products():
+        if redisCache.hgetall(product['_id']):
+            sales.append(redisCache.hgetall(product['_id']))
+        else:
+            orders = [o for o in get_orders() if ObjectId(o['productId']) == product['_id']]
+            orders = sorted(orders, key=lambda k: k['date'])
+            if len(orders) > 0:
+                product['last_order_date'] = orders[-1]['date']
+            product['total_sales'] = len(orders)
+            product['gross_revenue'] = product['price'] * product['total_sales']
+            redisCache.hmset(product['_id'], product)
+            sales.append(product)
+    return sales
