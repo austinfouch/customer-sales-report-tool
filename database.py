@@ -24,7 +24,6 @@ def initialize():
     products = mongoConn.db_project2.products
     orders = mongoConn.db_project2.orders
 
-    # You might also want to connect to redis...
     redisCache = redis.StrictRedis(host=config['database']['redis_host'],
                                 port=config['database']['redis_port'],
                                 password=config['database']['redis_pw'],
@@ -44,6 +43,7 @@ def upsert_customer(customer):
     customers.insert_one(customer)
 
 def delete_customer(id):
+    # must delete every order, and thus product in cache, associated with customer
     for order in get_orders():
         if order['customerId'] == id:
             orders.delete_one({'customerId' : id})
