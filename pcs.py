@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect
-from .database import *
+from database import *
 app = Flask(__name__)
 
 initialize()
