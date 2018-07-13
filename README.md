@@ -7,7 +7,7 @@ To run:
   - Create a config.ini file of the following format:
     ```
     [database]
-    mongo_connection = <mongodb-url
+    mongo_connection = <mongodb-url>
     redis_host = <redis-url>
     redis_port = <redis-port>
     redis_pw = <redis-pw>
